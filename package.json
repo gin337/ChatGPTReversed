@@ -9,6 +9,10 @@
   },
   "author": "gin337",
   "license": "MIT",
+  "homepage": "https://github.com/gin337/ChatGPTReversed",
+  "repository": {
+    "url": "https://github.com/gin337/ChatGPTReversed"
+  },
   "description": "Free ChatGPT API reversed and simplified",
   "keywords": [
     "chatgpt",
