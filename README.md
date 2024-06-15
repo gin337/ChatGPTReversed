@@ -99,3 +99,5 @@ main();
 
 // Output: Hello! I'm here and ready to assist you. How can I help you today?
 ```
+
+Like this project? Leave a star! 💫⭐
