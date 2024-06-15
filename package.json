@@ -1,0 +1,24 @@
+{
+  "name": "chatgptreversed",
+  "version": "0.1.1",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup --minify && npm link"
+  },
+  "author": "gin337",
+  "license": "MIT",
+  "description": "Free ChatGPT API reversed and simplified",
+  "keywords": [
+    "chatgpt",
+    "chatgpt api",
+    "chatgpt proxy",
+    "openai"
+  ],
+  "devDependencies": {
+    "@types/node": "^20.14.2",
+    "tsup": "^8.1.0",
+    "typescript": "^5.4.5"
+  }
+}
