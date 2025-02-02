@@ -5,7 +5,9 @@
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsup --minify && npm link"
+    "build": "tsup --minify",
+    "publish": "npm run build && npm publish",
+    "test": "vitest"
   },
   "author": "gin337",
   "license": "MIT",
@@ -23,6 +25,7 @@
   "devDependencies": {
     "@types/node": "^20.14.2",
     "tsup": "^8.1.0",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "vitest": "^3.0.4"
   }
 }

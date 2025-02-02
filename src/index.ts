@@ -1,28 +1,16 @@
-import {ChatGPTReversedProfile} from "./interfaces/interfaces";
 import {randomUUID} from "crypto";
-import {randomIP, solveSentinelChallenge} from "./utils/utils";
+import {
+  generateFakeSentinelToken,
+  simulateBypassHeaders,
+  solveSentinelChallenge,
+} from "./utils/utils";
 
 export class ChatGPTReversed {
-  private static sessionToken: string = "";
-  private static csrfToken: string | undefined = undefined;
-  private static requirementsToken: string = "";
+  public static csrfToken: string | undefined = undefined;
   private static initialized: boolean = false;
 
-  constructor(profile: ChatGPTReversedProfile) {
+  constructor() {
     if (ChatGPTReversed.initialized) throw new Error("ChatGPTReversed has already been initialized.");
-
-    if (profile.sessionToken === undefined || profile.requirementsToken === undefined) {
-      throw new Error(
-        "Your sessionToken & requirementsToken must be provided. Check the documentation for how to obtain these tokens."
-      );
-    }
-
-    ChatGPTReversed.sessionToken = profile.sessionToken;
-    ChatGPTReversed.requirementsToken = profile.requirementsToken;
-
-    if (profile.csrfToken !== undefined) {
-      ChatGPTReversed.csrfToken = profile.csrfToken;
-    }
 
     this.initialize();
   }
@@ -31,79 +19,76 @@ export class ChatGPTReversed {
     ChatGPTReversed.initialized = true;
   }
 
-  private async getCSRFToken(): Promise<string> {
+  public async rotateSessionData(): Promise<{
+    uuid: string;
+    csrf: string;
+    sentinel: {
+      token: string;
+      proof: string;
+      oaiSc: string;
+    };
+  }> {
+    const uuid = randomUUID();
+    const csrfToken = await this.getCSRFToken(uuid);
+    const sentinelToken = await this.getSentinelToken(uuid, csrfToken);
+
+    ChatGPTReversed.csrfToken = csrfToken;
+
+    return {
+      uuid,
+      csrf: csrfToken,
+      sentinel: sentinelToken,
+    };
+  }
+
+  private async getCSRFToken(uuid: string): Promise<string> {
     if (ChatGPTReversed.csrfToken !== undefined) {
       return ChatGPTReversed.csrfToken;
     }
 
+    const headers = await simulateBypassHeaders({
+      spoofAddress: true,
+      preOaiUUID: uuid,
+      accept: "application/json",
+    });
+
     const response = await fetch("https://chatgpt.com/api/auth/csrf", {
       method: "GET",
-      headers: {
-        Authorization: `Bearer ${ChatGPTReversed.sessionToken}`,
-        accept: "application/json",
-        "Content-Type": "application/json",
-        "cache-control": "no-cache",
-        Referer: "https://chatgpt.com/",
-        "Referrer-Policy": "strict-origin-when-cross-origin",
-        "content-type": "application/json",
-        "oai-device-id": randomUUID(),
-        "oai-echo-logs": "0,2620,1,1384,0,5111,1,12092,0,18165",
-        "oai-language": "en-US",
-        pragma: "no-cache",
-        priority: "u=1, i",
-        "sec-ch-ua": '"Not/A)Brand";v="8", "Chromium";v="126", "Google Chrome";v="126"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"Windows"',
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-origin",
-      },
+      headers: headers,
     });
 
     const data = await response.json();
 
     if (data.csrfToken === undefined) {
-      throw new Error(
-        "Failed to fetch required CSRF token. We did not receive the token from the server. Please check your sessionToken and try again."
-      );
+      throw new Error("Failed to fetch required CSRF token");
     }
 
     return data.csrfToken;
   }
 
-  private async getSentinelToken(): Promise<{
+  private async getSentinelToken(
+    uuid: string,
+    csrf: string
+  ): Promise<{
     token: string;
     proof: string;
-    ip: string;
+    oaiSc: string;
   }> {
-    const _randomUUID = randomUUID();
-    const _randomIp = await randomIP();
+    const headers = await simulateBypassHeaders({
+      spoofAddress: true,
+      preOaiUUID: uuid,
+      accept: "application/json",
+    });
+
+    const test = await generateFakeSentinelToken();
 
     const response = await fetch("https://chatgpt.com/backend-anon/sentinel/chat-requirements", {
       body: JSON.stringify({
-        p: `${ChatGPTReversed.requirementsToken}`,
+        p: test,
       }),
       headers: {
-        accept: "text/event-stream",
-        "accept-language": "de",
-        Authorization: `Bearer ${ChatGPTReversed.sessionToken}`,
-        "cache-control": "no-cache",
-        "content-type": "application/json",
-        "oai-device-id": _randomUUID,
-        "oai-echo-logs": "0,2620,1,1384,0,5111,1,12092,0,18165",
-        "oai-language": "en-US",
-        pragma: "no-cache",
-        priority: "u=1, i",
-        "sec-ch-ua": '"Not/A)Brand";v="8", "Chromium";v="126", "Google Chrome";v="126"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"Windows"',
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-origin",
-        cookie: `__Host-next-auth.csrf-token=${ChatGPTReversed.csrfToken}; oai-did=${_randomUUID};`,
-        Referer: "https://chatgpt.com/",
-        "Referrer-Policy": "strict-origin-when-cross-origin",
-        "X-Forwarded-For": _randomIp,
+        ...headers,
+        Cookie: `__Host-next-auth.csrf-token=${csrf}; oai-did=${uuid}; oai-nav-state=1;`,
       },
       method: "POST",
     });
@@ -111,9 +96,13 @@ export class ChatGPTReversed {
     const data = await response.json();
 
     if (data.token === undefined || data.proofofwork === undefined) {
-      throw new Error(
-        "Failed to fetch required required sentinel token. Please check your sessionToken and try again."
-      );
+      throw new Error("Failed to fetch required required sentinel token");
+    }
+
+    const oaiSc = response.headers.get("set-cookie")?.split("oai-sc=")[1]?.split(";")[0] || "";
+
+    if (!oaiSc) {
+      throw new Error("Failed to fetch required oai-sc token");
     }
 
     const challengeToken = await solveSentinelChallenge(data.proofofwork.seed, data.proofofwork.difficulty);
@@ -121,14 +110,12 @@ export class ChatGPTReversed {
     return {
       token: data.token,
       proof: challengeToken,
-      ip: _randomIp,
+      oaiSc: oaiSc,
     };
   }
 
   public async complete(message: string): Promise<string> {
-    if (ChatGPTReversed.csrfToken === undefined) {
-      ChatGPTReversed.csrfToken = await this.getCSRFToken();
-    }
+    const sessionData = await this.rotateSessionData();
 
     if (!ChatGPTReversed.initialized) {
       throw new Error(
@@ -136,31 +123,18 @@ export class ChatGPTReversed {
       );
     }
 
-    const {token, proof, ip} = await this.getSentinelToken();
-    const _randomUUID = randomUUID();
+    const headers = await simulateBypassHeaders({
+      accept: "text/event-stream",
+      spoofAddress: true,
+      preOaiUUID: sessionData.uuid,
+    });
 
     const response = await fetch("https://chatgpt.com/backend-anon/conversation", {
       headers: {
-        accept: "text/event-stream",
-        "accept-language": "de",
-        authorization: `Bearer ${ChatGPTReversed.sessionToken}`,
-        "cache-control": "no-cache",
-        "content-type": "application/json",
-        "oai-device-id": _randomUUID,
-        "oai-echo-logs": "0,2620,1,1384,0,5111,1,12092,0,18165",
-        "oai-language": "en-US",
-        "openai-sentinel-chat-requirements-token": token,
-        "openai-sentinel-proof-token": proof,
-        "sec-ch-ua": '"Not/A)Brand";v="8", "Chromium";v="126", "Google Chrome";v="126"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"Windows"',
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-origin",
-        cookie: `__Host-next-auth.csrf-token=${ChatGPTReversed.csrfToken}; __Secure-next-auth.session-token=${ChatGPTReversed.sessionToken}; oai-did=${_randomUUID};`,
-        Referer: "https://chatgpt.com/",
-        "Referrer-Policy": "strict-origin-when-cross-origin",
-        "X-Forwarded-For": ip,
+        ...headers,
+        Cookie: `__Host-next-auth.csrf-token=${sessionData.csrf}; oai-did=${sessionData.uuid}; oai-nav-state=1; oai-sc=${sessionData.sentinel.oaiSc};`,
+        "openai-sentinel-chat-requirements-token": sessionData.sentinel.token,
+        "openai-sentinel-proof-token": sessionData.sentinel.proof,
       },
       body: JSON.stringify({
         action: "next",
