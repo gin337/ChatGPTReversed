@@ -1,5 +1,7 @@
 # ChatGPTReversed - Educational project
 
+## **Update 02.02.2025**: The `ChatGPTReversed` instance doesn't need any params anymore. Scroll to the End for documentation
+
 Lets keep it simple, this is a educational project to learn to reverse complex API's and understand how they communicate with the frontend.
 In this case we take a look at the ChatGPT frontend and reverse engineer the API used to communicate with the LLM.
 
@@ -71,10 +73,7 @@ The rest is basic web communication knowledge.
 ```typescript
 import {ChatGPTReversed} from "chatgptreversed"; // const {ChatGPTReversed} = require("chatgptreversed");
 
-const chatgpt = new ChatGPTReversed({
-  sessionToken: "Session Token",
-  requirementsToken: "token x",
-});
+const chatgpt = new ChatGPTReversed();
 
 const result = await chatgpt.complete("Hello, how are you?");
 console.log(result);
@@ -85,10 +84,7 @@ console.log(result);
 ```typescript
 import {ChatGPTReversed} from "chatgptreversed"; // const {ChatGPTReversed} = require("chatgptreversed");
 
-const chatgpt = new ChatGPTReversed({
-  sessionToken: "Session Token",
-  requirementsToken: "token x",
-});
+const chatgpt = new ChatGPTReversed();
 
 async function main() {
   const result = await chatgpt.complete("Hello, how are you?");
