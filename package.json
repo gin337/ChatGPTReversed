@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsup --minify",
     "publish": "npm run build && npm publish",
-    "test": "vitest"
+    "test": "vitest --disable-console-intercept"
   },
   "author": "gin337",
   "license": "MIT",

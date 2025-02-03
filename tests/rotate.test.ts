@@ -6,6 +6,8 @@ test("Rotates all needed values", async () => {
 
   const result = await chatgpt.rotateSessionData();
 
+  console.log("Result: ", result);
+
   expect(result).toEqual({
     uuid: expect.any(String),
     csrf: expect.any(String),
