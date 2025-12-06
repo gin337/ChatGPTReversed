@@ -6,6 +6,5 @@ test("Retrieves answer from oai", async () => {
 
   const result = await chatgpt.complete("Hey, how are you?");
   console.log("Result: ", result);
-
-  expect(result).toBeTypeOf("string");
+  expect(typeof result).toBe("string");
 });
