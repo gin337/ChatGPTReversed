@@ -9,6 +9,7 @@ test("Retrieves stream answer from oai", async () => {
   let streamData = "";
   for await (const chunk of result) {
     streamData += chunk.text;
+    console.log("Chunk: ", chunk.text);
   }
   console.log("Streamed Result: ", streamData);
 
