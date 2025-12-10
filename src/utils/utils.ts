@@ -32,6 +32,7 @@ export async function simulateBypassHeaders({
     Referer: "https://chatgpt.com/",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "oai-device-id": preOaiUUID || uuid,
+    "oai-language": "en",
     "User-Agent": simulated.agent,
     pragma: "no-cache",
     priority: "u=1, i",
@@ -48,6 +49,9 @@ export async function simulateBypassHeaders({
           "X-Remote-Addr": ip,
           "X-Host": ip,
           "X-Forwarded-Host": ip,
+          Forwarded: `for=${ip}`,
+          "True-Client-IP": ip,
+          "X-Real-IP": ip,
         }
       : {}),
   };

@@ -1,9 +1,9 @@
 import {randomUUID} from "crypto";
-import {
-  generateFakeSentinelToken,
-  simulateBypassHeaders,
-  solveSentinelChallenge,
-} from "./utils/utils";
+import {generateFakeSentinelToken, simulateBypassHeaders, solveSentinelChallenge} from "./utils/utils";
+
+interface CompleteOptionsProfile {
+  stream?: boolean;
+}
 
 export class ChatGPTReversed {
   public static csrfToken: string | undefined = undefined;
@@ -114,7 +114,17 @@ export class ChatGPTReversed {
     };
   }
 
-  public async complete(message: string): Promise<string> {
+  public async complete(
+    message: string,
+    options: {stream: true}
+  ): Promise<AsyncGenerator<{text: string; metadata: any}>>;
+
+  public async complete(message: string, options?: {stream?: false}): Promise<string>;
+
+  public async complete(
+    message: string,
+    options?: CompleteOptionsProfile
+  ): Promise<string | AsyncGenerator<{text: string; metadata: any}>> {
     const sessionData = await this.rotateSessionData();
 
     if (!ChatGPTReversed.initialized) {
@@ -129,6 +139,8 @@ export class ChatGPTReversed {
       preOaiUUID: sessionData.uuid,
     });
 
+    const messageID = randomUUID();
+
     const response = await fetch("https://chatgpt.com/backend-anon/conversation", {
       headers: {
         ...headers,
@@ -140,45 +152,74 @@ export class ChatGPTReversed {
         action: "next",
         messages: [
           {
-            id: randomUUID(),
+            id: messageID,
             author: {
               role: "user",
             },
+            create_time: Date.now(),
             content: {
               content_type: "text",
               parts: [message],
             },
-            metadata: {},
+            metadata: {
+              selected_all_github_repos: false,
+              selected_github_repos: [],
+              serialization_metadata: {
+                custom_symbol_offsets: [],
+              },
+              dictation: false,
+            },
           },
         ],
-        parent_message_id: randomUUID(),
+        paragen_cot_summary_display_override: "allow",
+        parent_message_id: "client-created-root",
         model: "auto",
-        timezone_offset_min: -120,
+        timezone_offset_min: -60,
+        timezone: "Europe/Berlin",
         suggestions: [],
-        history_and_training_disabled: false,
+        history_and_training_disabled: true,
         conversation_mode: {
           kind: "primary_assistant",
-          plugin_ids: null,
         },
-        force_paragen: false,
-        force_paragen_model_slug: "",
-        force_nulligen: false,
-        force_rate_limit: false,
-        reset_rate_limits: false,
-        websocket_request_id: randomUUID(),
-        force_use_sse: true,
+        system_hints: [],
+        supports_buffering: true,
+        supported_encodings: ["v1"],
+        client_contextual_info: {
+          is_dark_mode: true,
+          time_since_loaded: 7,
+          page_height: 911,
+          page_width: 1080,
+          pixel_ratio: 1,
+          screen_height: 1080,
+          screen_width: 1920,
+          app_name: "chatgpt.com",
+        },
       }),
       method: "POST",
     });
+
+    if (!response.ok) {
+      throw new Error(`Request failed with status ${response.status}: ${response.statusText}`);
+    }
 
     if (response.body === null) {
       throw new Error("Failed to receive response body. Please check your sessionToken and try again.");
     }
 
-    const reader = response.body.getReader();
+    if (options?.stream) {
+      return this.streamResponse(response);
+    }
+
+    return this.collectFullResponse(response);
+  }
+
+  private async collectFullResponse(response: Response): Promise<string> {
+    const reader = response.body!.getReader();
     const decoder = new TextDecoder();
+
     let result = "";
-    let buffer: any = "";
+    let buffer = "";
+    let finished = false;
 
     while (true) {
       const {done, value} = await reader.read();
@@ -186,33 +227,138 @@ export class ChatGPTReversed {
 
       buffer += decoder.decode(value, {stream: true});
       let lines = buffer.split("\n");
-      buffer = lines.pop();
+      buffer = lines.pop() || "";
 
       for (const line of lines) {
-        if (line.startsWith("data:")) {
-          try {
-            const json = JSON.parse(line.replace("data:", "").trim());
-            if (json.message?.content?.parts && json.message.status === "finished_successfully") {
+        if (!line.startsWith("data:")) continue;
+        const dataStr = line.replace("data:", "").trim();
+        if (!dataStr || dataStr === "[DONE]") continue;
+
+        try {
+          const json = JSON.parse(dataStr);
+
+          if (json.message) {
+            if (json.message.content && json.message.content.parts) {
               result = json.message.content.parts[0];
+            }
+            if (json.message.status === "finished_successfully") {
+              finished = true;
               break;
             }
-          } catch (e) {
-            continue;
+          } else if (json.o === "append" && json.p === "/message/content/parts/0") {
+            result += json.v;
+          } else if (Array.isArray(json.v)) {
+            for (const op of json.v) {
+              if (op.o === "append" && op.p === "/message/content/parts/0") {
+                result += op.v;
+              }
+              if (op.p === "/message/status" && op.o === "replace" && op.v === "finished_successfully") {
+                finished = true;
+              }
+            }
           }
+        } catch {
+          continue;
         }
       }
-      if (result) break;
+
+      if (finished) break;
     }
 
-    if (!result && buffer.startsWith("data:")) {
+    if (!finished && buffer.startsWith("data:")) {
       try {
         const json = JSON.parse(buffer.replace("data:", "").trim());
-        if (json.message?.content?.parts && json.message.status === "finished_successfully") {
+        if (json.message && json.message.content && json.message.content.parts) {
           result = json.message.content.parts[0];
         }
-      } catch (e) {}
+      } catch {
+      }
     }
 
     return result;
+  }
+
+  private async *streamResponse(response: Response): AsyncGenerator<{text: string; metadata: any}> {
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+
+    let buffer = "";
+    let fullText = "";
+    let finished = false;
+
+    while (!finished) {
+      const {done, value} = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, {stream: true});
+      let lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+
+        const dataStr = line.slice("data:".length).trim();
+        if (!dataStr || dataStr === "[DONE]") continue;
+
+        let json: any;
+        try {
+          json = JSON.parse(dataStr);
+        } catch {
+          continue;
+        }
+
+        let deltaText = "";
+        let metadata: any = undefined;
+
+        if (json.message) {
+          const parts = json.message.content?.parts;
+          metadata = json.message.metadata ?? json.metadata;
+
+          if (Array.isArray(parts) && typeof parts[0] === "string") {
+            const current = parts[0];
+            if (current.startsWith(fullText)) {
+              deltaText = current.slice(fullText.length);
+            } else {
+              deltaText = current;
+            }
+            fullText = current;
+          }
+
+          if (json.message.status === "finished_successfully") {
+            finished = true;
+          }
+        }
+
+        if (json.o === "append" && json.p === "/message/content/parts/0") {
+          deltaText += json.v;
+          fullText += json.v;
+        }
+
+        if (Array.isArray(json.v)) {
+          for (const op of json.v) {
+            if (op.o === "append" && op.p === "/message/content/parts/0") {
+              deltaText += op.v;
+              fullText += op.v;
+            }
+            if (op.p === "/message/status" && op.o === "replace" && op.v === "finished_successfully") {
+              finished = true;
+            }
+          }
+        }
+
+        if (json.type === "message_stream_complete") {
+          finished = true;
+        }
+
+        if (deltaText) {
+          yield {
+            text: deltaText,
+            metadata: metadata ?? json.metadata ?? {},
+          };
+        }
+
+        if (finished) break;
+      }
+    }
   }
 }
