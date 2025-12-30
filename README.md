@@ -2,6 +2,8 @@
 
 ## **Update 02.02.2025**: The `ChatGPTReversed` instance doesn't need any params anymore. Scroll to the End for documentation
 
+## **Update 30.12.2025**: In recent weeks, OpenAI changed their frontend flow. I will update the project in the next months once I have time
+
 Lets keep it simple, this is a educational project to learn to reverse complex API's and understand how they communicate with the frontend.
 In this case we take a look at the ChatGPT frontend and reverse engineer the API used to communicate with the LLM.
 
